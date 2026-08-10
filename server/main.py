@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 
 from . import resources, tools
 from .config import Config, load_config
+from .docs import DocsIndex
 from .houdini_client import HoudiniClient
 
 INSTRUCTIONS = """
@@ -25,17 +26,27 @@ artist is working on, and `scene://errors` when something is broken. Reach for
 `execute_python` only when the user actually asks you to change the scene, and
 remind them to save first.
 
+It also indexes the SideFX documentation shipped with this exact Houdini build —
+HOM, VEX, APEX and the node reference. Use `search_docs` instead of recalling
+Houdini APIs from memory: parameter names, node versions and function signatures
+drift between releases, and this index matches what the user actually has
+installed. `get_doc` reads a page in full.
+
 Node paths are absolute and Houdini-style, e.g. /obj/geo1/OUT.
 """.strip()
 
 
-def build_server(config: Config | None = None) -> tuple[FastMCP, HoudiniClient]:
+def build_server(
+    config: Config | None = None, docs: DocsIndex | None = None
+) -> tuple[FastMCP, HoudiniClient]:
     config = config or load_config()
     client = HoudiniClient(config)
+    if docs is None:
+        docs = DocsIndex()
 
     mcp = FastMCP(name="houdini", instructions=INSTRUCTIONS)
-    resources.register(mcp, client)
-    tools.register(mcp, client)
+    resources.register(mcp, client, docs)
+    tools.register(mcp, client, docs)
     return mcp, client
 
 

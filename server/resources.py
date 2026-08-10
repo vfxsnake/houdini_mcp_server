@@ -8,6 +8,7 @@ from typing import Any
 from fastmcp import FastMCP
 from fastmcp.exceptions import ResourceError
 
+from .docs import DocsIndex, NAMESPACES, format_page
 from .houdini_client import BridgeError, HoudiniClient
 
 
@@ -21,7 +22,37 @@ def _normalize_node_path(path: str) -> str:
     return path if path.startswith("/") else "/" + path
 
 
-def register(mcp: FastMCP, client: HoudiniClient) -> None:
+def _read_doc(docs: DocsIndex, namespace: str, topic: str) -> str:
+    """Fetch a help page, falling back to suggestions rather than a bare miss."""
+    topic = topic.strip().strip("/")
+    try:
+        page = docs.get(namespace, topic)
+    except FileNotFoundError as exc:
+        raise ResourceError(str(exc)) from exc
+
+    if page is not None:
+        return format_page(page)
+
+    candidates = docs.resolve(namespace, topic)
+    if len(candidates) == 1:
+        found = docs.get(namespace, candidates[0]["topic"])
+        if found is not None:
+            return format_page(found)
+    if candidates:
+        listed = "\n".join(
+            f"  docs://{c['namespace']}/{c['topic']} — {c['title']}"
+            for c in candidates[:15]
+        )
+        raise ResourceError(
+            f"No exact page 'docs://{namespace}/{topic}'. Did you mean:\n{listed}"
+        )
+    raise ResourceError(
+        f"No page 'docs://{namespace}/{topic}'. Use the search_docs tool to find "
+        f"the right topic — the {namespace} namespace is indexed but has no such entry."
+    )
+
+
+def register(mcp: FastMCP, client: HoudiniClient, docs: DocsIndex | None = None) -> None:
     @mcp.resource(
         "scene://info",
         name="Houdini scene info",
@@ -94,3 +125,34 @@ def register(mcp: FastMCP, client: HoudiniClient) -> None:
             return _dump(await client.geometry(_normalize_node_path(path)))
         except BridgeError as exc:
             raise ResourceError(str(exc)) from exc
+
+    if docs is None:
+        return
+
+    descriptions = {
+        "hom": "HOM Python reference — hou.* classes and functions, e.g. "
+               "docs://hom/hou/Node",
+        "vex": "VEX function reference, e.g. docs://vex/functions/length",
+        "apex": "APEX operator and script reference, e.g. docs://apex/apex/Abs",
+        "nodes": "Node reference across all contexts, e.g. docs://nodes/sop/scatter",
+    }
+
+    def make_reader(namespace: str):
+        # A closure per namespace, so the handler signature stays exactly the
+        # single {topic*} the URI template declares.
+        async def read(topic: str) -> str:
+            return _read_doc(docs, namespace, topic)
+
+        return read
+
+    for namespace in NAMESPACES:
+        mcp.resource(
+            f"docs://{namespace}/{{topic*}}",
+            name=f"SideFX {namespace} documentation",
+            description=(
+                f"{descriptions[namespace]} Pages come from the help shipped with "
+                f"Houdini, so they match the installed version. Find topics with "
+                f"the search_docs tool."
+            ),
+            mime_type="text/markdown",
+        )(make_reader(namespace))

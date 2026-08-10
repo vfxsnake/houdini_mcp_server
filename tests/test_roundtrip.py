@@ -79,15 +79,28 @@ async def run_checks() -> int:
                 str(template_uris),
             )
             check(
-                "tools registered",
-                tool_names
-                == {
+                "scene tools registered",
+                {
                     "execute_python",
                     "get_node_info",
                     "get_parm_value",
                     "get_node_tree",
-                },
+                }
+                <= tool_names,
                 str(tool_names),
+            )
+            # Registered here too, but exercised by test_docs.py -- they need
+            # Houdini's shipped help, not a Houdini session.
+            check(
+                "docs tools registered",
+                {"search_docs", "get_doc"} <= tool_names,
+                str(tool_names),
+            )
+            check(
+                "docs resource templates registered",
+                {f"docs://{ns}/{{topic*}}" for ns in ("hom", "vex", "apex", "nodes")}
+                <= template_uris,
+                str(template_uris),
             )
 
             print("\n== Resources ==")
