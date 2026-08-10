@@ -220,4 +220,5 @@ __marimo__/
 
 # Files
 CLAUDE.md
+log.md
 *.code-workspace
