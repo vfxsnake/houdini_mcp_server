@@ -27,8 +27,14 @@ import houdini_bridge
 houdini_bridge.start()          # serves on 8008
 ```
 
-**B. A shelf tool** — same code, one click. Good while developing, since
-`houdini_bridge.stop()` then `importlib.reload(houdini_bridge)` picks up edits.
+Use the **Python Source Editor**, not the Python Shell: the Shell is a REPL and
+interleaves multi-line pastes into nonsense. Apply the buffer exactly once —
+a second Apply calls `build_scene()` again and `start()` raises on the taken port.
+
+**B. A shelf tool** — same code, one click.
+
+**To pick up edits to the bridge, restart Houdini.** Do *not* use
+`stop()` → `importlib.reload()` → `start()`; see the restart note below.
 
 **C. Start with Houdini** — a package file at
 `%USERPROFILE%\Documents\houdini22.0\packages\houdini_mcp.json`:
@@ -101,6 +107,23 @@ safe on the main thread, so handlers are dispatched through
   mid-cook will wait for that cook to finish** — hence the client's 30s timeout.
 - Calling it *from* the main thread would deadlock, so the bridge checks and
   sidesteps that.
+
+**The server cannot be restarted in the same session.** `stop()` calls
+`hwebserver.requestShutdown()`, which tears down the server and its worker
+threads but **leaves the listening socket bound to the process**. The port then
+looks alive to `netstat` while nothing services it: connections are accepted and
+never answered, so clients hang until they time out rather than failing fast.
+`start()` cannot rebind that port afterwards. Diagnose it with
+`threading.active_count()` in the Python Shell — a healthy background server
+shows several threads, a wedged one shows `1`. Recovery is restarting Houdini;
+a *different* port works within the session, since only the original is leaked.
+
+**The bind address is not configurable.** `hwebserver.run()` takes no host or
+interface argument, so the bridge listens on `0.0.0.0`, not loopback — despite
+what the startup message prints. Since `execute` runs unsandboxed Python in the
+live session, that is a real exposure on any untrusted network.
+`request.clientAddress` is available if a loopback check is wanted; otherwise
+block the port at the firewall.
 
 **Cameras aren't geometry.** `/obj/cam1` contains genuine SOPs (`camOrigin`,
 `file1`, `xform1`) that build its frustum wireframe, so `displayNode()` returns

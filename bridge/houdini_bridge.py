@@ -59,7 +59,12 @@ def _run_on_main_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
     if _is_main_thread():
         return func(*args, **kwargs)
 
-    return hdefereval.executeInMainThreadWithResult(func, *args, **kwargs)
+    # Bind the arguments rather than forwarding them: the dispatcher's own
+    # signature is executeInMainThreadWithResult(code, *args, **kwargs), so a
+    # handler kwarg named "code" -- houdini.execute has one -- would collide
+    # with its first parameter and raise TypeError before ever running.
+    return hdefereval.executeInMainThreadWithResult(
+        functools.partial(func, *args, **kwargs))
 
 
 def houdini_api(func: Callable[..., Any]) -> Callable[..., Any]:
