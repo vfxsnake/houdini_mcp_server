@@ -18,7 +18,13 @@ python tests/test_live_bridge.py    # 24 checks, in another shell
 Houdini has to be able to import the module, so put `bridge/` on the Python
 path. Pick whichever suits you:
 
-**A. Try it right now** — Python Source Editor (Windows ▸ Python Source Editor):
+**A. `scripts/start_bridge.py`** — the usual way. Paste it into the Python
+Source Editor and Apply, or point a shelf tool at it. It puts `bridge/` on the
+path, starts on 8008, and is safe to run twice: it probes the port first and
+reports rather than raising. `HOUDINI_MCP_REPO` and `HOUDINI_BRIDGE_PORT`
+override the defaults.
+
+**B. By hand**, if you want to see the moving parts:
 
 ```python
 import sys
@@ -28,10 +34,8 @@ houdini_bridge.start()          # serves on 8008
 ```
 
 Use the **Python Source Editor**, not the Python Shell: the Shell is a REPL and
-interleaves multi-line pastes into nonsense. Apply the buffer exactly once —
-a second Apply calls `build_scene()` again and `start()` raises on the taken port.
-
-**B. A shelf tool** — same code, one click.
+interleaves multi-line pastes into nonsense. Apply the buffer exactly once — a
+second Apply raises on the taken port (which `start_bridge.py` handles for you).
 
 **To pick up edits to the bridge, restart Houdini.** Do *not* use
 `stop()` → `importlib.reload()` → `start()`; see the restart note below.
