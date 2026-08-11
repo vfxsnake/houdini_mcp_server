@@ -134,12 +134,28 @@ Currently pinned in dev to fastmcp 3.4.6 / httpx 0.28.1 on Python 3.13.
 
 Two processes: something serving the bridge, and the MCP server.
 
-**Against real Houdini** — load the bridge into your session (see
-[bridge/README.md](bridge/README.md)), then:
+**Against real Houdini** — start the bridge, then the server, then point a client at it.
 
-```bash
-python -m server.main --port 3000
-```
+1. In Houdini (Windows ▸ Python Source Editor, Apply):
+
+   ```python
+   exec(open(r"C:\DEV\houdini_mcp_server\scripts\start_bridge.py").read())
+   ```
+
+   `exec` rather than a paste so it always runs the current script. Expect
+   `[houdini_bridge] starting on http://127.0.0.1:8008/api`.
+
+2. In its own terminal — it runs in the foreground and must stay open:
+
+   ```bash
+   ./scripts/start_server.sh      # or scripts\start_server.bat on Windows
+   ```
+
+3. Register it with a client, per [Connecting clients](#connecting-clients) below.
+
+The server starts fine without Houdini and only fails when it reaches for the bridge,
+so "client connects but every scene query errors" means the bridge is missing, not the
+server. The error names the bridge URL, which is how you tell the two apart.
 
 **Against real Houdini, headless** — no GUI required, good for development:
 
@@ -189,12 +205,17 @@ Configuration, all optional:
 **Claude Code** (WSL) — reaches the Windows host by IP, not localhost:
 
 ```bash
-claude mcp add --transport http houdini "http://$(ip route show default | awk '{print $3}'):3000/mcp"
+claude mcp add --transport http --scope user houdini "http://$(ip route show default | awk '{print $3}'):3000/mcp"
 ```
 
 That IP (`172.22.192.1` at time of writing) is assigned by WSL and **changes when you
 reboot**, so prefer the command substitution over pasting a literal. Enabling mirrored
 networking in `.wslconfig` would let WSL use `127.0.0.1` instead and make this stable.
+Drop `--scope user` to keep the server to the current project instead of every directory.
+
+MCP servers are read at startup, so **a session already running won't see it** — exit,
+add, and relaunch. Then `/mcp` should list `houdini` as connected; if it shows a
+connection failure, the server isn't running or the host IP moved.
 
 ## What the server exposes
 
