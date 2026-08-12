@@ -32,6 +32,16 @@ except ImportError:  # non-graphical session
 DEFAULT_PORT = 8008
 NAMESPACE = "houdini"
 
+# execute() runs unsandboxed Python in a live session, so the bridge must not be
+# reachable from the network. hwebserver.run() has no host argument -- the bind
+# address lives in the per-port settings instead (see start()).
+DEFAULT_ADDRESS = "127.0.0.1"
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"})
+
+# Set by start(). Off-box callers are refused unless the bridge was deliberately
+# started on a non-loopback address.
+_loopback_only = True
+
 # A scene walk should never wedge the server on a pathological file.
 MAX_NODES_SCANNED = 20000
 
@@ -67,11 +77,49 @@ def _run_on_main_thread(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         functools.partial(func, *args, **kwargs))
 
 
+# --- Access control -------------------------------------------------------
+
+
+def _client_host(request: Any) -> str | None:
+    """The caller's address, or None if this build won't tell us."""
+    getter = getattr(request, "clientAddress", None)
+    if getter is None:
+        return None
+    try:
+        addr = getter()
+    except Exception:
+        return None
+    if isinstance(addr, (tuple, list)):
+        return str(addr[0]) if addr else None
+    return str(addr) if addr else None
+
+
+def _refuse_remote(request: Any) -> str | None:
+    """Reason to refuse this caller, or None to serve it.
+
+    Second line of defence behind the loopback bind in start(). The socket
+    should not be reachable from off-box at all; this still refuses if some
+    Houdini build ever ignores the ADDRESS setting. An address we cannot read
+    is served rather than refused -- the bind is the real protection, and a
+    signature change upstream should not silently kill the bridge.
+    """
+    if not _loopback_only:
+        return None
+    host = _client_host(request)
+    if host is None or host in LOOPBACK_HOSTS:
+        return None
+    return (f"Refused: the bridge serves loopback only, and this request came "
+            f"from {host}. Start it with address=\"0.0.0.0\" to open it up.")
+
+
 def houdini_api(func: Callable[..., Any]) -> Callable[..., Any]:
     """Register func as houdini.<name>, running its body on the main thread."""
 
     @functools.wraps(func)
     def wrapper(request: Any, **kwargs: Any) -> Any:
+        refusal = _refuse_remote(request)
+        if refusal is not None:
+            raise hwebserver.APIError(refusal)
         try:
             return _run_on_main_thread(func, **kwargs)
         except hwebserver.APIError:
@@ -451,14 +499,33 @@ def execute(code: str) -> dict[str, Any]:
 # --- Lifecycle ------------------------------------------------------------
 
 
-def start(port: int = DEFAULT_PORT, debug: bool = False) -> None:
+def start(port: int = DEFAULT_PORT, debug: bool = False,
+          address: str = DEFAULT_ADDRESS) -> None:
     """Start the bridge web server.
 
     In a graphical session this returns immediately, leaving the server running
     in a background thread. In hython it blocks until interrupted.
+
+    Binds `address` only. The default keeps the bridge off the network, which
+    matters because execute() is unsandboxed Python in your live scene: the MCP
+    server runs on the same machine, so loopback is all it ever needs.
     """
+    global _loopback_only
+    _loopback_only = address in LOOPBACK_HOSTS
+
+    # run() takes no host argument, but the per-port settings do -- "" is the
+    # default port's name. Without this the server binds 0.0.0.0 regardless.
+    bound = address
+    if hasattr(hwebserver, "setSettingsForPort"):
+        hwebserver.setSettingsForPort({"PORT": port, "ADDRESS": address}, "")
+    else:
+        bound = "0.0.0.0"
+        print("[houdini_bridge] WARNING: this hwebserver has no "
+              "setSettingsForPort, so the server binds every interface. "
+              "Off-box requests are still refused by the handler.")
+
     in_background = hou.isUIAvailable()
-    print(f"[houdini_bridge] starting on http://127.0.0.1:{port}/api")
+    print(f"[houdini_bridge] starting on http://{bound}:{port}/api")
     print(f"[houdini_bridge] registered: {NAMESPACE}.<scene_info|node_tree|"
           f"node_info|selected|geometry|errors|parm|execute>")
     hwebserver.run(port=port, debug=debug, in_background=in_background)

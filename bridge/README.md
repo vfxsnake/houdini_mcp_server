@@ -122,12 +122,28 @@ never answered, so clients hang until they time out rather than failing fast.
 shows several threads, a wedged one shows `1`. Recovery is restarting Houdini;
 a *different* port works within the session, since only the original is leaked.
 
-**The bind address is not configurable.** `hwebserver.run()` takes no host or
-interface argument, so the bridge listens on `0.0.0.0`, not loopback — despite
-what the startup message prints. Since `execute` runs unsandboxed Python in the
-live session, that is a real exposure on any untrusted network.
-`request.clientAddress` is available if a loopback check is wanted; otherwise
-block the port at the firewall.
+**The bind address lives in the settings, not in `run()`.** `hwebserver.run()`
+takes no host argument, and left alone it binds `0.0.0.0` — which for this
+bridge meant anything on the LAN could POST `houdini.execute` and run arbitrary
+Python in your open scene. The address is reachable, just somewhere
+non-obvious:
+
+```python
+hwebserver.setSettingsForPort({"PORT": port, "ADDRESS": "127.0.0.1"}, "")
+```
+
+`""` is the default port's name, and the call must come before `run()`. Note
+the documented signature says `port_name=""` is optional; it isn't — omitting
+it raises `TypeError`. `start()` does this for you, so the bridge is loopback-only
+by default and the startup message is finally telling the truth. Pass
+`start(address="0.0.0.0")` if you deliberately want it open.
+
+Behind that, every handler also checks `request.clientAddress()` and refuses
+non-loopback callers with a 422. Belt and braces: the socket shouldn't be
+reachable at all, but if some build ever ignores `ADDRESS`, requests still get
+turned away. A caller whose address can't be read is served rather than refused
+— the bind is the real protection, and an upstream signature change shouldn't
+silently kill the bridge.
 
 **Cameras aren't geometry.** `/obj/cam1` contains genuine SOPs (`camOrigin`,
 `file1`, `xform1`) that build its frustum wireframe, so `displayNode()` returns

@@ -11,16 +11,16 @@ see your scene, not a robot that builds it for you.
 
 ## Current status
 
-**As of 2026-08-10 — feature-complete against the original design. The MCP server
-(`server/`), the Houdini bridge (`bridge/`) and the documentation index (`server/docs.py`)
-all work: nine resources and six tools, checked by three suites totalling 91 assertions,
-all green — `tests/test_roundtrip.py` (27) against a mock with Houdini closed,
-`tests/test_docs.py` (39) over 7,890 indexed help pages, `tests/test_live_bridge.py` (25)
-against a live session via `hython`. Streamable HTTP is confirmed reachable from Claude
-Desktop on Windows localhost and from Claude Code in WSL via the host IP. What remains is
-not construction but exercise: the GUI main-thread path has never run, since all
-development was headless, and the client configs below have never held a real
-conversation.**
+**As of 2026-08-11 — feature-complete against the original design, and exercised in a
+real graphical session. The MCP server (`server/`), the Houdini bridge (`bridge/`) and
+the documentation index (`server/docs.py`) all work: nine resources and six tools,
+checked by four suites totalling 116 assertions, all green — `tests/test_roundtrip.py`
+(27) against a mock with Houdini closed, `tests/test_docs.py` (39) over 7,890 indexed
+help pages, `tests/test_live_bridge.py` (25) against a live session via `hython`, and
+`tests/test_bridge_dispatch.py` (25) covering the GUI-only paths with stubbed modules.
+Streamable HTTP is confirmed reachable from Claude Desktop on Windows localhost and from
+Claude Code in WSL via the host IP. What remains is not construction but use: whether the
+context this gives is genuinely useful on a real scene rather than a test fixture.**
 
 The build order in CLAUDE.md called for the bridge first, then the server against a live
 session. It ran the other way round: the server was built first against a **mock bridge**
@@ -54,8 +54,23 @@ is left is using it and finding out where it is wrong.
   client speaks `json=[name, args, kwargs]`. Handlers dispatch through
   `hdefereval.executeInMainThreadWithResult` — which is GUI-only (it needs `hou.ui`), blocks
   until Houdini's event loop is idle, and deadlocks if called from the main thread; all three
-  cases are handled, though **the GUI main-thread path is the one part still unexercised**,
-  since development ran headless.
+  cases are handled.
+
+  That GUI path went unexercised through two sessions of headless development, and broke
+  on its first real run: **`executeInMainThreadWithResult`'s own first parameter is named
+  `code`**, so forwarding handler kwargs through it collided with `houdini.execute(code=…)`
+  and raised `TypeError` before anything ran. Binding with `functools.partial` immunises
+  every kwarg name rather than just that one. No headless test could have caught it — the
+  headless branch returns before `hdefereval` is reached — which is why
+  `tests/test_bridge_dispatch.py` now stubs `hou`/`hwebserver`/`hdefereval` and drives
+  those branches directly, with a stub that keeps the real parameter name.
+
+  **The bridge binds `127.0.0.1` only.** `hwebserver.run()` has no host argument, so this
+  was assumed impossible and the bridge listened on every interface while printing
+  `127.0.0.1`; the address turned out to live in the per-port settings
+  (`setSettingsForPort({"ADDRESS": …}, "")`). It mattered: a `0.0.0.0`-bound bridge
+  answered a full scene dump to an off-box caller, and would have run whatever Python that
+  caller sent. Handlers additionally refuse non-loopback `request.clientAddress()`.
 
   Three things only the real API could teach. **`cookTime()` does not exist** anywhere in
   HOM — `cookCount()` is the only cook telemetry, and the first draft called a method that
@@ -109,7 +124,9 @@ houdini_mcp_server/
 │   ├── test_roundtrip.py   27 checks against the mock, no Houdini required
 │   ├── test_docs.py        39 checks over the shipped help, no session needed
 │   ├── live_scene.py       builds a known scene, serves the bridge from hython
-│   └── test_live_bridge.py 25 checks against real HOM
+│   ├── test_live_bridge.py 25 checks against real HOM
+│   └── test_bridge_dispatch.py
+│                           25 checks on the GUI-only paths, stdlib stubs only
 └── pyproject.toml
 ```
 
@@ -172,6 +189,13 @@ python tests/mock_bridge.py --port 8008
 python -m server.main --port 3000
 python tests/test_roundtrip.py        # 27 checks, no Houdini
 python tests/test_docs.py             # 39 checks over the shipped help
+```
+
+The bridge's GUI-only branches need neither Houdini nor the conda env — stubbed
+`hou`/`hwebserver`/`hdefereval` stand in, so this runs on bare stdlib Python anywhere:
+
+```bash
+python3 tests/test_bridge_dispatch.py  # 25 checks on paths hython never reaches
 ```
 
 `tests/mock_bridge.py` is the executable specification of the wire protocol; the mock and
@@ -305,17 +329,22 @@ first against the mock, and the bridge written afterwards to satisfy it.
 | 3 | Wire them together — confirm round-trip | Complete (mock and real HOM) |
 | 4 | Remaining resources and tools | Complete |
 | 5 | Docs index — populate and expose `docs://`, `search_docs` | Complete |
-| 6 | Client config — Claude Desktop + Claude Code | Drafted above, not yet used in anger |
+| 6 | Client config — Claude Desktop + Claude Code | Complete; Claude Code's is registered |
+| 7 | GUI main-thread path | Verified 25/25 in Houdini 22.0.368; found one real bug |
+| 8 | Loopback-only bind + off-box refusal | Complete, verified from a real off-box caller |
 
 ### What's left, concretely
 
-- **Exercise the GUI main-thread path.** Everything so far ran headless, so
-  `hdefereval.executeInMainThreadWithResult` has never actually been used. Load the bridge
-  into a graphical session and re-run `python tests/test_live_bridge.py --port 8008`.
+Construction is done. What remains is judgement, and it can only come from use:
+
 - **Use it in anger** from both Claude Desktop and Claude Code, on a real scene rather than
   the five-node fixture, and see which resources are actually worth polling and whether
   `search_docs` returns what a real question needs.
 - **Consider a `docs://` search resource** or richer excerpts if search results turn out to
   need more context than the current summary line gives.
-- **Open question:** auth on the MCP server (probably overkill for local dev), and whether
-  to enable WSL mirrored networking so the host IP stops changing on reboot.
+- **Concurrency is untested.** One client, one request at a time is all that has ever run.
+  The "a request during a heavy cook blocks until the event loop idles" behaviour is
+  documented from reading `hdefereval`, not from watching it happen.
+- **Open question:** auth on the MCP server (probably overkill now the bridge itself is
+  loopback-only), and whether to enable WSL mirrored networking so the host IP stops
+  changing on reboot.
