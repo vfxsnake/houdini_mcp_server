@@ -332,14 +332,15 @@ first against the mock, and the bridge written afterwards to satisfy it.
 | 6 | Client config — Claude Desktop + Claude Code | Complete; Claude Code's is registered |
 | 7 | GUI main-thread path | Verified 25/25 in Houdini 22.0.368; found one real bug |
 | 8 | Loopback-only bind + off-box refusal | Complete, verified from a real off-box caller |
+| 9 | Real use on real scenes | In service since 2026-08-12, reported working |
 
 ### What's left, concretely
 
-Construction is done. What remains is judgement, and it can only come from use:
+Construction is done and the server is in regular use. What remains is refinement, and it
+can only come from what that use turns up:
 
-- **Use it in anger** from both Claude Desktop and Claude Code, on a real scene rather than
-  the five-node fixture, and see which resources are actually worth polling and whether
-  `search_docs` returns what a real question needs.
+- **Which resources actually earn their keep**, and whether `search_docs` returns what a
+  real question needs — worth noting as it comes up rather than guessing in advance.
 - **Consider a `docs://` search resource** or richer excerpts if search results turn out to
   need more context than the current summary line gives.
 - **Concurrency is untested.** One client, one request at a time is all that has ever run.
