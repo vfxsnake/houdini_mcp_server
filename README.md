@@ -348,3 +348,29 @@ Construction is done. What remains is judgement, and it can only come from use:
 - **Open question:** auth on the MCP server (probably overkill now the bridge itself is
   loopback-only), and whether to enable WSL mirrored networking so the host IP stops
   changing on reboot.
+
+---
+
+## To run
+
+1. **In Houdini** (Windows ▸ Python Source Editor, Apply):
+
+   ```python
+   exec(open(r"C:\DEV\houdini_mcp_server\scripts\start_bridge.py").read())
+   ```
+
+2. **In a WSL terminal** — leave it open, it runs in the foreground:
+
+   ```bash
+   cd /mnt/c/DEV/houdini_mcp_server && ./scripts/start_server.sh
+   ```
+
+3. **First run only** — register the URL step 2 printed. Redo this whenever the WSL host
+   IP changes, which it does on reboot:
+
+   ```bash
+   claude mcp add --transport http houdini http://<host-ip>:3000/mcp
+   ```
+
+4. **Start Claude Code.** Nothing to launch — it connects to the server from step 2.
+   Check with `/mcp` in the session, or `claude mcp list` from a shell.
