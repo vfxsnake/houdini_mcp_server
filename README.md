@@ -334,21 +334,27 @@ first against the mock, and the bridge written afterwards to satisfy it.
 | 8 | Loopback-only bind + off-box refusal | Complete, verified from a real off-box caller |
 | 9 | Real use on real scenes | In service since 2026-08-12, reported working |
 
-### What's left, concretely
+### Scope, and what sits outside it
 
-Construction is done and the server is in regular use. What remains is refinement, and it
-can only come from what that use turns up:
+**The project is complete.** Everything it set out to do — a live read-only view of a
+Houdini session, a version-matched documentation index, and a deliberate `execute_python`
+escape hatch — is built, tested and in regular use. Nothing below is outstanding work.
 
-- **Which resources actually earn their keep**, and whether `search_docs` returns what a
-  real question needs — worth noting as it comes up rather than guessing in advance.
-- **Consider a `docs://` search resource** or richer excerpts if search results turn out to
-  need more context than the current summary line gives.
-- **Concurrency is untested.** One client, one request at a time is all that has ever run.
-  The "a request during a heavy cook blocks until the event loop idles" behaviour is
-  documented from reading `hdefereval`, not from watching it happen.
-- **Open question:** auth on the MCP server (probably overkill now the bridge itself is
-  loopback-only), and whether to enable WSL mirrored networking so the host IP stops
-  changing on reboot.
+Known limits, stated so nobody infers more than was tested:
+
+- **Single-client by design.** One client, one request at a time is all that has ever run,
+  and that matches the intended use: one person, one Houdini session, one assistant. The
+  "a request during a heavy cook blocks until the event loop idles" behaviour is documented
+  from reading `hdefereval`, not from watching it happen.
+- **Security model is loopback-only, deliberately.** The bridge binds `127.0.0.1` and
+  refuses off-box callers. There is no auth on the MCP server, because on a single
+  workstation there is nothing for it to defend against.
+
+Possible extensions, none of them planned — only worth doing if real use ever demands it:
+
+- Richer `search_docs` excerpts, or a `docs://` search resource, if the summary line ever
+  proves too thin.
+- WSL mirrored networking, so the host IP stops changing on reboot. A convenience, not a fix.
 
 ---
 
